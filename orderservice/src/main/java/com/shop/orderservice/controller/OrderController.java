@@ -19,7 +19,7 @@ import java.util.UUID;
 @RequestMapping("v1/api/orders")
 public class OrderController {
 
-    private Logger logger = LoggerFactory.getLogger(OrderController.class);
+    private final static Logger logger = LoggerFactory.getLogger(OrderController.class);
     private final OrderService orderService;
 
 
@@ -30,26 +30,29 @@ public class OrderController {
 
     @PostMapping
     public ResponseEntity<OrderStatusResponseDTO> createNewOrder(@RequestBody @Valid OrderRequestDTO orderRequestDTO) {
-        logger.info("Processing incoming order request for customer: {} and items: {} ",
-                orderRequestDTO.customerDetailsRequest().personDTO(), orderRequestDTO.orderItems().size());
-        return ResponseEntity.ok(orderService.createOrderFromDTO(orderRequestDTO));
+        logger.info("Processing incoming order for {} items", orderRequestDTO.orderItems().size());
+        OrderStatusResponseDTO newOrder = orderService.createOrderFromDTO(orderRequestDTO);
+        logger.info("Successfully created new order with id: {}", newOrder.orderId());
+        return ResponseEntity.ok(newOrder);
     }
 
     @GetMapping("/{id}")
     public ResponseEntity<OrderResponseDTO> getOrderById(@PathVariable UUID id) {
+        logger.info("Request to fetch order with id: {}", id);
         OrderResponseDTO order = orderService.getOrderById(id);
         if (order != null) {
-            logger.info("Found order with id: {} ", id);
+            logger.info("Found order with id: {}", id);
             return ResponseEntity.ok(order);
         }
-        logger.info("Cannot find order with id: {} ", id);
+        logger.warn("No order found for id: {}", id);
         return ResponseEntity.notFound().build();
     }
 
     @PutMapping("/{id}/cancel")
     public ResponseEntity<Void> cancelOrder(@PathVariable UUID id) {
-        logger.info("Deleting order with id: {} ", id);
+        logger.info("Request to cancel order with id: {}", id);
         orderService.cancelOrder(id);
+        logger.info("Successfully cancelled order with id: {}", id);
         return ResponseEntity.noContent().build();
     }
 }

@@ -15,8 +15,8 @@ import java.util.function.Supplier;
 
 @Service
 public class CustomerService {
-    private Logger logger = LoggerFactory.getLogger(CustomerService.class);
-    private CustomerRepository customerRepository;
+    private static final Logger logger = LoggerFactory.getLogger(CustomerService.class);
+    private final CustomerRepository customerRepository;
 
     @Autowired
     public CustomerService(CustomerRepository customerRepository) {
@@ -24,8 +24,8 @@ public class CustomerService {
     }
 
     public Customer findOrCreate(CustomerDetailsRequestDTO dto) {
-        logger.info("Searching for user by firstName and lastName");
-        return customerRepository.findCustomerByFirstNameAndLastName(dto.personDTO().firstName(), dto.personDTO().lastName())
+        logger.info("Searching for user by email: {}", dto.personDTO().email());
+        return customerRepository.findCustomerByEmail(dto.personDTO().email())
                 .orElseGet(() -> ifNotPresentCreateNew(dto));
     }
 
@@ -37,7 +37,5 @@ public class CustomerService {
         Customer newCustomer = new Customer(personDTO.firstName(), personDTO.lastName(), personDTO.email(), personDTO.phoneNumber(),
                 addressDTO.street(), addressDTO.city(), addressDTO.postalCode(), addressDTO.country());
         return customerRepository.save(newCustomer);
-
-
     }
 }

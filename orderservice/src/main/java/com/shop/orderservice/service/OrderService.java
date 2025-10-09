@@ -8,10 +8,10 @@ import com.shop.orderservice.exception.KafkaPublishingException;
 import com.shop.orderservice.exception.OrderNotFoundException;
 import com.shop.orderservice.kafka.KafkaOrderPublisher;
 import com.shop.orderservice.repository.OrderRepository;
+import jakarta.transaction.Transactional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import java.util.UUID;
 
@@ -33,6 +33,7 @@ public class OrderService {
         this.kafkaOrderPublisher = kafkaOrderPublisher;
     }
 
+    @Transactional
     public OrderStatusResponseDTO createOrderFromDTO(OrderRequestDTO orderRequestDTO) {
         Customer customer = customerService.findOrCreate(orderRequestDTO.customerDetailsRequest());
         Order order = Order.create(orderRequestDTO, customer);
@@ -50,6 +51,7 @@ public class OrderService {
                 order.getPaymentStatus()
         );
     }
+    @Transactional
     public void cancelOrder(UUID id) {
         Order order = findOrderById(id);
         order.cancel();
@@ -58,7 +60,7 @@ public class OrderService {
 
     private Order findOrderById(UUID id) {
         return orderRepository.findById(id)
-                .orElseThrow(() -> new OrderNotFoundException("Order with id: " + id + " doesn't exist"));
+                .orElseThrow(() -> new OrderNotFoundException(String.format("Order with id: %s doesn't exist", id)));
     }
 
     private OrderStatusResponseDTO buildOrderStatusResponse(Order savedOrder) {
@@ -69,8 +71,7 @@ public class OrderService {
         );
     }
 
-
-    public void publishToKafka(Order savedOrder, OrderRequestDTO orderRequestDTO) {
+    private void publishToKafka(Order savedOrder, OrderRequestDTO orderRequestDTO) {
         try {
             kafkaOrderPublisher.publishOrderRequest(
                     savedOrder.getCustomer().getCustomerId(),
@@ -78,8 +79,8 @@ public class OrderService {
                     orderRequestDTO
             );
         } catch (JsonProcessingException e) {
-            logger.error("Failed to publish order to Kafka", e);
-            throw new KafkaPublishingException("Kafka publishing failed", e);
+            logger.error("Failed to publish order with id: {} to Kafka", savedOrder.getId(), e);
+            throw new KafkaPublishingException(String.format("Kafka publishing failed for order with id: %s", savedOrder.getId()), e);
         }
     }
 }
