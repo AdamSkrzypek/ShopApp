@@ -8,6 +8,7 @@ import com.shop.orderservice.repository.CustomerRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 
 import java.util.HashSet;
@@ -36,6 +37,13 @@ public class CustomerService {
 
         Customer newCustomer = new Customer(personDTO.firstName(), personDTO.lastName(), personDTO.email(), personDTO.phoneNumber(),
                 addressDTO.street(), addressDTO.city(), addressDTO.postalCode(), addressDTO.country());
-        return customerRepository.save(newCustomer);
+
+        try {
+            return customerRepository.save(newCustomer);
+        } catch (DataIntegrityViolationException ex) {
+            logger.warn("Race condition detected while creating customer for email {}. Fetching existing one.", dto.personDTO().email());
+            return customerRepository.findCustomerByEmail(dto.personDTO().email())
+                    .orElseThrow(() -> new IllegalStateException("Failed to create or find customer after race condition. Email: " + dto.personDTO().email()));
+        }
     }
 }

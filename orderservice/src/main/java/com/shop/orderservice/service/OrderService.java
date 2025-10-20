@@ -1,45 +1,60 @@
+// java
 package com.shop.orderservice.service;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.shop.orderservice.domain.dto.*;
 import com.shop.orderservice.domain.entity.Customer;
 import com.shop.orderservice.domain.entity.Order;
-import com.shop.orderservice.exception.KafkaPublishingException;
+import com.shop.orderservice.domain.entity.OutboxEvent;
 import com.shop.orderservice.exception.OrderNotFoundException;
-import com.shop.orderservice.kafka.KafkaOrderPublisher;
 import com.shop.orderservice.repository.OrderRepository;
+import com.shop.orderservice.repository.OutboxEventRepository;
 import jakarta.transaction.Transactional;
+import lombok.AllArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+
 import java.util.UUID;
 
-
 @Service
+@AllArgsConstructor
 public class OrderService {
 
     private static final Logger logger = LoggerFactory.getLogger(OrderService.class);
     private final OrderRepository orderRepository;
     private final CustomerService customerService;
-    private final KafkaOrderPublisher kafkaOrderPublisher;
-
-    @Autowired
-    public OrderService(OrderRepository orderRepository,
-                        CustomerService customerService,
-                        KafkaOrderPublisher kafkaOrderPublisher) {
-        this.orderRepository = orderRepository;
-        this.customerService = customerService;
-        this.kafkaOrderPublisher = kafkaOrderPublisher;
-    }
+    private final OutboxEventRepository outboxEventRepository;
+    private final ObjectMapper objectMapper;
 
     @Transactional
     public OrderStatusResponseDTO createOrderFromDTO(OrderRequestDTO orderRequestDTO) {
         Customer customer = customerService.findOrCreate(orderRequestDTO.customerDetailsRequest());
         Order order = Order.create(orderRequestDTO, customer);
         Order savedOrder = orderRepository.save(order);
-        publishToKafka(savedOrder, orderRequestDTO);
+        createAndSaveOrderCreatedEvent(savedOrder, orderRequestDTO);
         return buildOrderStatusResponse(savedOrder);
+    }
+
+    private void createAndSaveOrderCreatedEvent(Order order, OrderRequestDTO orderRequestDTO) {
+        OrderKafkaRequestDTO kafkaRequest = new OrderKafkaRequestDTO(
+                order.getCustomer().getCustomerId(),
+                order.getId(),
+                orderRequestDTO
+        );
+        try {
+            String payload = objectMapper.writeValueAsString(kafkaRequest);
+            OutboxEvent event = new OutboxEvent(
+                    order.getId(),
+                    "Order",
+                    "OrderCreated",
+                    payload
+            );
+            outboxEventRepository.save(event);
+        }catch (JsonProcessingException e) {
+            throw new RuntimeException("Could not serialize order event payload for order id: " + order.getId(), e);
+        }
     }
 
     public OrderResponseDTO getOrderById(UUID id) {
@@ -51,6 +66,7 @@ public class OrderService {
                 order.getPaymentStatus()
         );
     }
+
     @Transactional
     public void cancelOrder(UUID id) {
         Order order = findOrderById(id);
@@ -70,18 +86,4 @@ public class OrderService {
                 savedOrder.getStatus()
         );
     }
-
-    private void publishToKafka(Order savedOrder, OrderRequestDTO orderRequestDTO) {
-        try {
-            kafkaOrderPublisher.publishOrderRequest(
-                    savedOrder.getCustomer().getCustomerId(),
-                    savedOrder.getId(),
-                    orderRequestDTO
-            );
-        } catch (JsonProcessingException e) {
-            logger.error("Failed to publish order with id: {} to Kafka", savedOrder.getId(), e);
-            throw new KafkaPublishingException(String.format("Kafka publishing failed for order with id: %s", savedOrder.getId()), e);
-        }
-    }
 }
-
